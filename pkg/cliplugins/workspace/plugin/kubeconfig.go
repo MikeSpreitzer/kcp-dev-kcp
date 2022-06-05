@@ -193,6 +193,18 @@ func (kc *KubeConfig) UseWorkspace(ctx context.Context, name string) error {
 			return fmt.Errorf("current URL %q does not point to cluster workspace", config.Host)
 		}
 
+		if strings.Contains(name, ":") {
+			splittedName := strings.Split(name, ":")
+			workspaceName := splittedName[len(splittedName)-1]
+			clusterName := logicalcluster.New(strings.TrimSuffix(name, ":"+workspaceName))
+			_, err := kc.personalClient.Cluster(clusterName).TenancyV1beta1().Workspaces().Get(ctx, workspaceName, metav1.GetOptions{})
+			if err != nil {
+				if apierrors.IsNotFound(err) {
+					return fmt.Errorf("invalid input")
+				}
+				return err
+			}
+		}
 		if strings.Contains(name, ":") || name == tenancyv1alpha1.RootCluster.String() {
 			// absolute logical cluster
 			u.Path = path.Join(u.Path, logicalcluster.New(name).Path())
