@@ -25,6 +25,7 @@ import (
 	"k8s.io/client-go/rest"
 
 	apiexportoptions "github.com/kcp-dev/kcp/pkg/virtual/apiexport/options"
+	denatureoptions "github.com/kcp-dev/kcp/pkg/virtual/denature/options"
 	"github.com/kcp-dev/kcp/pkg/virtual/framework/rootapiserver"
 	initializingworkspacesoptions "github.com/kcp-dev/kcp/pkg/virtual/initializingworkspaces/options"
 	kcpinformers "github.com/kcp-dev/kcp/sdk/client/informers/externalversions"
@@ -35,12 +36,14 @@ const virtualWorkspacesFlagPrefix = "virtual-workspaces-"
 type Options struct {
 	APIExport              *apiexportoptions.APIExport
 	InitializingWorkspaces *initializingworkspacesoptions.InitializingWorkspaces
+	Denature               *denatureoptions.Denature
 }
 
 func NewOptions() *Options {
 	return &Options{
 		APIExport:              apiexportoptions.New(),
 		InitializingWorkspaces: initializingworkspacesoptions.New(),
+		Denature:               denatureoptions.New(),
 	}
 }
 
@@ -49,6 +52,7 @@ func (o *Options) Validate() []error {
 
 	errs = append(errs, o.APIExport.Validate(virtualWorkspacesFlagPrefix)...)
 	errs = append(errs, o.InitializingWorkspaces.Validate(virtualWorkspacesFlagPrefix)...)
+	errs = append(errs, o.Denature.Validate(virtualWorkspacesFlagPrefix)...)
 
 	return errs
 }
@@ -74,10 +78,16 @@ func (o *Options) NewVirtualWorkspaces(
 		return nil, err
 	}
 
-	all, err := Merge(apiexports, initializingworkspaces)
+	denatureworkspaces, err := o.Denature.NewVirtualWorkspaces(rootPathPrefix, config, wildcardKcpInformers)
 	if err != nil {
 		return nil, err
 	}
+
+	all, err := Merge(apiexports, initializingworkspaces, denatureworkspaces)
+	if err != nil {
+		return nil, err
+	}
+	fmt.Printf("all virtual workspaces = %#+v\n", all)
 	return all, nil
 }
 
