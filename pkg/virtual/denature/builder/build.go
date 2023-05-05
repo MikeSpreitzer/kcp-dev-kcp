@@ -199,7 +199,7 @@ func BuildVirtualWorkspace(
 					obj, clientGVK, err = myDecoder.Decode(body, nil, &unstructured.Unstructured{})
 					if err != nil {
 						logger.Error(err, "Failed to decode body", "request", request)
-						http.Error(writer, fmt.Sprintf("failed to decode body: %v", err), http.StatusInternalServerError)
+						http.Error(writer, fmt.Sprintf("failed to decode request body: %v", err), http.StatusInternalServerError)
 					}
 					logger.Info("Read request body", "clientGVK", clientGVK, "body", body, "obj", obj)
 					var bodyBuilder strings.Builder
@@ -207,7 +207,7 @@ func BuildVirtualWorkspace(
 					newBody = bodyBuilder.String()
 					logger.Info("Recoded request body", "clientGVK", clientGVK, "newBody", newBody)
 				} else {
-					logger.Info("I ain't got no body")
+					logger.Info("Request ain't got no body")
 				}
 				request.Body = io.NopCloser(strings.NewReader(newBody))
 				request.ContentLength = int64(len(newBody))
@@ -231,7 +231,31 @@ func BuildVirtualWorkspace(
 						request.URL.Host = forwardedHost.Host
 					},
 					ModifyResponse: func(resp *http.Response) error {
-						return nil // TODO
+						logger.Info("Starting to process response", "transferEncoding", resp.TransferEncoding, "initialContentLength", resp.ContentLength)
+						if sliceHas(resp.TransferEncoding, "chunked") {
+							return nil // TODO: implement
+						}
+						body, err := io.ReadAll(resp.Body)
+						if err != nil {
+							return fmt.Errorf("failed to read response body: %v", err)
+						}
+						var newBody string
+						if len(body) > 0 {
+							obj, clientGVK, err = myDecoder.Decode(body, nil, &unstructured.Unstructured{})
+							if err != nil {
+								return fmt.Errorf("failed to decode response body: %w", err)
+							}
+							logger.Info("Read response body", "clientGVK", clientGVK, "body", body, "obj", obj)
+							var bodyBuilder strings.Builder
+							myEncoder.Encode(obj, &bodyBuilder)
+							newBody = bodyBuilder.String()
+							logger.Info("Recoded response body", "clientGVK", clientGVK, "newBody", newBody)
+						} else {
+							logger.Info("Response ain't got no body")
+						}
+						resp.Body = io.NopCloser(strings.NewReader(newBody))
+						resp.ContentLength = int64(len(newBody))
+						return nil
 					},
 					Transport: authenticatingTransport,
 				}
@@ -284,4 +308,13 @@ func digestUrl(urlPath, rootPathPrefix string) (
 	}
 
 	return cluster, dynamiccontext.APIDomainKey("denatureview"), strings.TrimSuffix(urlPath, realPath), true
+}
+
+func sliceHas[Elt comparable](sl []Elt, seek Elt) bool {
+	for _, elt := range sl {
+		if elt == seek {
+			return true
+		}
+	}
+	return false
 }
